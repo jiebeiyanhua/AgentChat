@@ -1,0 +1,8 @@
+/.env
+/models/
+/definition/SOUL.md
+/definition/USER.md
+/.venv/
+/.idea/
+/__pycache__/
+/.vscode/

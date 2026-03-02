@@ -1,0 +1,13 @@
+--index-url https://mirrors.aliyun.com/pypi/simple
+#环境配置
+python-dotenv
+#LangChain
+langchain-openai
+langchain-core
+langchain-classic
+langchain-text-splitters
+langchain-huggingface
+langchain-community
+requests
+
+
