@@ -1,6 +1,7 @@
 
 from agent import AgentLLM
 if __name__ == "__main__":
+    llmClient = AgentLLM()
     #多轮对话
     while True:
         print("="*30)
@@ -9,7 +10,6 @@ if __name__ == "__main__":
         if text == "exit":
             break
         try:
-            llmClient = AgentLLM()
             print("--- 调用LLM ---")
             for chunk in llmClient.think(text):
                 # 如果是最终输出，则直接打印；如果是中间步骤，可忽略或选择显示

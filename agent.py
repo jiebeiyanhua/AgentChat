@@ -1,9 +1,7 @@
 import os
-from functools import reduce
 
 from dotenv import load_dotenv
 from langchain_classic.agents import create_openai_tools_agent, AgentExecutor
-from langchain_core.messages import ToolMessage
 from langchain_core.prompts import SystemMessagePromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder, \
     ChatPromptTemplate
 from langchain_openai import ChatOpenAI
@@ -32,7 +30,7 @@ class AgentLLM:
             timeout=timeout
         )
 
-    def think(self,input_text:str,temperature:float = 0.3):
+    def think(self,input_text:str):
         t_list= tools_list()
 
         system_message = SystemMessagePromptTemplate.from_template(
@@ -52,6 +50,6 @@ class AgentLLM:
 
         agent = create_openai_tools_agent(self.llm, t_list.getToolsList(), prompt)
         #添加温度
-        agent_executor = AgentExecutor(agent=agent, tools=t_list.getToolsList(), verbose=False,temperature=temperature)
+        agent_executor = AgentExecutor(agent=agent, tools=t_list.getToolsList(), verbose=False)
 
         return agent_executor.stream({"input": input_text})
