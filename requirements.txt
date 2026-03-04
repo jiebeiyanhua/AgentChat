@@ -8,5 +8,7 @@ langchain-classic
 langchain-text-splitters
 langchain-huggingface
 langchain-community
+langchain_chroma
+chromadb
 requests
 tavily
