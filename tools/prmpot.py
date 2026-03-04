@@ -31,10 +31,14 @@ def retrieve_profile(query: str) -> str:
                 f.close()
         except FileNotFoundError:
             continue
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=200,
+        chunk_overlap=50,
+        separators=["#"],
+        length_function=len)
     chunks = splitter.split_text(full_text)
     # 使用自定义 embeddings 创建 Chroma 向量库，并返回检索器
     vectorstore = Chroma.from_texts(chunks, embeddings)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})  # 返回检索器
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 5})  # 返回检索器
     docs = retriever.invoke(query)
     return "\n\n".join([doc.page_content for doc in docs])
