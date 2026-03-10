@@ -1,23 +1,11 @@
 # 2. 定义检索工具（让AI可以主动检索相关设定）
-import os
-
-from dotenv import load_dotenv
 from langchain_community.vectorstores import Chroma
 from langchain_core.tools import tool
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-load_dotenv()
+from util.embeddings_models import get_embeddings
 
-MODEL_PATH = os.getenv("MODEL_PATH")
-DEVICE = os.getenv("DEVICE")
-NORMALIZE_EMBEDDINGS = os.getenv("NORMALIZE_EMBEDDINGS")
-
-embeddings = HuggingFaceEmbeddings(
-    model_name=MODEL_PATH,      # 中英文通用嵌入模型
-    model_kwargs={'device': DEVICE},      # 如果GPU可用可改为 'cuda'
-    encode_kwargs={'normalize_embeddings': NORMALIZE_EMBEDDINGS}
-)
+embeddings = get_embeddings()
 
 @tool
 def retrieve_profile(query: str) -> str:

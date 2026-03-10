@@ -1,3 +1,4 @@
+huggingface-hub
 --index-url https://mirrors.aliyun.com/pypi/simple
 #环境配置
 python-dotenv
@@ -8,7 +9,13 @@ langchain-classic
 langchain-text-splitters
 langchain-huggingface
 langchain-community
-langchain_chroma
-chromadb
 requests
 tavily
+uvicorn
+psycopg2-binary
+sqlalchemy
+pgvector
+numpy
+fastapi
+sentence-transformers
+torch

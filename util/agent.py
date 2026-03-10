@@ -15,6 +15,7 @@ API_KEY = os.getenv("API_KEY")
 API_URL = os.getenv("API_URL")
 API_MODEL = os.getenv("API_MODEL")
 API_TIMEOUT = int(os.getenv("API_TIMEOUT", 60))
+API_TEMPERATURE = float(os.getenv("API_TEMPERATURE", 0.7))
 
 
 def get_message_history(session_id: str) -> DbChatMessageHistory:
@@ -26,6 +27,7 @@ class AgentLLM:
         api_url = api_url or API_URL
         api_model = api_model or API_MODEL
         timeout = timeout or API_TIMEOUT
+        temperature = API_TEMPERATURE
 
         if not all([api_key, api_url, api_model]):
             raise ValueError("模型ID、API密钥和服务地址必须被提供或在.env文件中定义。")
@@ -34,8 +36,10 @@ class AgentLLM:
             api_key=api_key,
             base_url=api_url,  # 注意 /v1 路径
             model=api_model,
-            timeout=timeout
+            timeout=timeout,
+            temperature=temperature
         )
+        print("LLM初始化完成")
 
     def think(self,input_text:str,session_id:str):
         try:
