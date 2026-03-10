@@ -12,7 +12,7 @@ def retrieve_profile(query: str) -> str:
     """根据用户输入检索最相关的个人设定、AI身份或价值观片段。"""
     # 1. 加载所有设定文件并构建向量库
     full_text = ""
-    for file in ["definition/USER.md", "definition/IDENTITY.md", "definition/SOUL.md"]:
+    for file in ["definition/USER.md", "definition/SOUL.md"]:
         try:
             with open(file, "r", encoding='utf-8', errors='ignore') as f:
                 full_text += f"\n\n--- {file} ---\n" + f.read()

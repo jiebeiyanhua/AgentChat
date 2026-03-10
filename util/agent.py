@@ -2,13 +2,13 @@ import os
 
 from dotenv import load_dotenv
 from langchain_classic.agents import create_openai_tools_agent, AgentExecutor
-from langchain_core.messages import HumanMessage
 from langchain_core.prompts import SystemMessagePromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder, \
-    ChatPromptTemplate, ChatMessagePromptTemplate
+    ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 from tools.tool_list import tools_list
 from util.DbChatMessageHistory import DbChatMessageHistory
+from util.time_trial import times
 
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
@@ -41,6 +41,7 @@ class AgentLLM:
         )
         print("LLM初始化完成")
 
+    @times
     def think(self,input_text:str,session_id:str):
         try:
             t_list= tools_list()
@@ -58,9 +59,11 @@ class AgentLLM:
             else:
                 history_messages = all_history
 
-            system_message = SystemMessagePromptTemplate.from_template(
-                "你是一个遵循严格角色设定的人物，代入角色身份来跟我通过手机互相聊天。" + t_list.getAvailableTools()
-            )
+            with open("definition/IDENTITY.md", "r", encoding="utf-8") as f:
+                identity_prompt = f.read()
+
+
+            system_message = SystemMessagePromptTemplate.from_template(identity_prompt + "\n" + t_list.getAvailableTools())
             user_message = HumanMessagePromptTemplate.from_template("{input}")
             placeholder = MessagesPlaceholder("agent_scratchpad")
             chat_message = MessagesPlaceholder("chat_history")
