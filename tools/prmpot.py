@@ -5,8 +5,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from util.embeddings_models import get_embeddings
 
-embeddings = get_embeddings()
-
 @tool
 def retrieve_profile(query: str) -> str:
     """根据用户输入检索最相关的个人设定、AI身份或价值观片段。"""
@@ -19,6 +17,10 @@ def retrieve_profile(query: str) -> str:
                 f.close()
         except FileNotFoundError:
             continue
+    
+    # 获取嵌入模型（线程安全）
+    embeddings = get_embeddings()
+    
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=200,
         chunk_overlap=50,

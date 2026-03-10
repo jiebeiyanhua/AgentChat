@@ -35,6 +35,7 @@ class ChatMessage(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    print("数据库初始化完成")
 
 def get_db():
     db = SessionLocal()

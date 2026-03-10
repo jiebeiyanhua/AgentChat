@@ -11,8 +11,6 @@ from langchain_core.messages import BaseMessage, messages_from_dict, message_to_
 from util.db_models import ChatMessage, SessionLocal, init_db
 from util.embeddings_models import get_embeddings
 
-embeddings = get_embeddings()
-
 class DbChatMessageHistory(BaseChatMessageHistory):
     def __init__(
             self,
@@ -57,8 +55,9 @@ class DbChatMessageHistory(BaseChatMessageHistory):
             msg_dict = message_to_dict(message)
             doc_content = json.dumps(msg_dict, ensure_ascii=False)
             
+            embeddings = get_embeddings()
             embedding_vector = embeddings.embed_query(doc_content)
-            embedding_str = json.dumps(embedding_vector.tolist())
+            embedding_str = json.dumps(embedding_vector)
             
             metadata = {
                 "session_id": self.session_id,
@@ -100,6 +99,7 @@ class DbChatMessageHistory(BaseChatMessageHistory):
     def search_similar(self, query: str, k: int = 5) -> List[BaseMessage]:
         db = SessionLocal()
         try:
+            embeddings = get_embeddings()
             query_embedding = embeddings.embed_query(query)
             query_vector = np.array(query_embedding)
             

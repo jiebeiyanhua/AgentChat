@@ -1,6 +1,5 @@
 import os
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 
 import uvicorn
 from fastapi import FastAPI
@@ -12,11 +11,6 @@ from util.DbChatMessageHistory import DbChatMessageHistory
 
 app = FastAPI()
 llmClient = AgentLLM()
-executor = ThreadPoolExecutor()
-
-def think_generator(input_text: str, session_id: str):
-    for chunk in llmClient.think(input_text, session_id):
-        yield chunk
 
 async def generate_response(input_text: str, session_id: str):
     history = DbChatMessageHistory(session_id=session_id)
@@ -24,9 +18,16 @@ async def generate_response(input_text: str, session_id: str):
     
     try:
         print("--- 调用LLM ---")
-        gen = think_generator(input_text, session_id)
-        while True:
-            chunk = await asyncio.get_event_loop().run_in_executor(executor, gen.__next__)
+        
+        # 使用 asyncio.to_thread 将同步生成器转换为异步
+        loop = asyncio.get_event_loop()
+        
+        def run_think():
+            return list(llmClient.think(input_text, session_id))
+        
+        chunks = await loop.run_in_executor(None, run_think)
+        
+        for chunk in chunks:
             if "output" in chunk:
                 output = chunk["output"]
                 print(f"AI: {output}", end="", flush=True)
@@ -34,10 +35,11 @@ async def generate_response(input_text: str, session_id: str):
                 yield f"data: {output}\n\n"
             elif "actions" in chunk:
                 print(f"[工具调用] {chunk['actions']}")
-    except StopIteration:
+        
         history.add_message(HumanMessage(content=input_text))
         history.add_message(AIMessage(content=full_response))
-    except ValueError as e:
+    except Exception as e:
+        print(f"Error: {e}")
         yield f"data: Error: {str(e)}\n\n"
 
 @app.post("/agent-talk")
