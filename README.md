@@ -122,20 +122,63 @@ npm run build
 
 ## API接口
 
-### `/agent-talk` POST
+### `GET /agent-history`
 
 **参数**：
-- `input_text`：用户输入的问题
 - `session_id`：会话ID，用于区分不同的对话会话
 
 **返回**：
-- 流式响应（text/event-stream），包含AI的回复内容
+- 对话历史列表，包含用户和AI的消息
 
 **示例请求**：
 ```bash
-curl -X POST "http://localhost:8000/agent-talk" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "input_text=今天天气怎么样？&session_id=user123"
+curl "http://localhost:8000/agent-history?session_id=user123"
+```
+
+### `WebSocket /ws/agent-talk`
+
+**用途**：实时对话接口，支持流式响应
+
+**消息类型**：
+- 客户端发送：
+  - 聊天消息：`{"input_text": "问题内容", "session_id": "会话ID"}`
+  - 心跳消息：`{"type": "heartbeat", "session_id": "会话ID"}`
+
+- 服务器响应：
+  - 文本片段：`{"type": "chunk", "content": "文本内容"}`
+  - 工具调用：`{"type": "action", "content": "工具调用信息"}`
+  - 错误信息：`{"type": "error", "message": "错误信息"}`
+  - 完成信息：`{"type": "done", "message": "[DONE]"}`
+  - 心跳响应：`{"type": "heartbeat_ack", "session_id": "会话ID"}`
+
+**示例连接**：
+```javascript
+const socket = new WebSocket('ws://localhost:8000/ws/agent-talk');
+
+// 发送消息
+socket.send(JSON.stringify({
+  input_text: '今天天气怎么样？',
+  session_id: 'user123'
+}));
+
+// 接收消息
+socket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  switch (data.type) {
+    case 'chunk':
+      console.log('AI:', data.content);
+      break;
+    case 'action':
+      console.log('Tool action:', data.content);
+      break;
+    case 'done':
+      console.log('Conversation completed');
+      break;
+    case 'error':
+      console.error('Error:', data.message);
+      break;
+  }
+};
 ```
 
 ## 工具说明
@@ -189,6 +232,8 @@ API接口支持流式响应，实时返回AI的回复内容，提升用户体验
 
 ## 依赖说明
 
+### 后端依赖
+
 - Python 3.8+
 - langchain-openai - 用于与OpenAI API交互
 - langchain-core - LangChain核心功能
@@ -207,6 +252,13 @@ API接口支持流式响应，实时返回AI的回复内容，提升用户体验
 - numpy - 数值计算库
 - sentence-transformers - 嵌入模型
 - torch - PyTorch深度学习框架
+
+### 前端依赖
+
+- Vue 3 - 前端框架
+- TypeScript - 类型系统
+- Vite - 构建工具
+- Vue DevTools - 开发工具
 
 ## 注意事项
 
