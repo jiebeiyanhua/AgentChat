@@ -1,9 +1,14 @@
-from typing import Dict, Any
+﻿import logging
+from typing import Any, Dict
+
+logger = logging.getLogger(__name__)
+
 
 class ToolExecutor:
     """
     一个工具执行器，负责管理和执行工具。
     """
+
     def __init__(self):
         self.tools: Dict[str, Dict[str, Any]] = {}
 
@@ -12,7 +17,7 @@ class ToolExecutor:
         向工具箱中注册一个新工具。
         """
         if name in self.tools:
-            print(f"警告:工具 '{name}' 已存在，将被覆盖。")
+            logger.warning("Tool '%s' already exists and will be overwritten.", name)
         self.tools[name] = {"description": description, "func": func}
 
     def getTool(self, name: str) -> callable:
@@ -35,6 +40,6 @@ class ToolExecutor:
         获取所有可用工具的列表。
         """
         tools_list = []
-        for name, info in self.tools.items():
+        for _, info in self.tools.items():
             tools_list.append(info["func"])
         return tools_list

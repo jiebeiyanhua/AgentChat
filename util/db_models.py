@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
@@ -22,6 +23,7 @@ DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+logger = logging.getLogger(__name__)
 
 
 class ChatMessage(Base):
@@ -53,7 +55,7 @@ class KnowledgeChunk(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
-    print("Database initialized.")
+    logger.info("Database initialized.")
 
 
 def get_db():

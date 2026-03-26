@@ -1,4 +1,5 @@
 import os
+import logging
 
 from dotenv import load_dotenv
 from langchain_classic.agents import AgentExecutor, create_openai_tools_agent
@@ -21,6 +22,7 @@ API_URL = os.getenv("API_URL")
 API_MODEL = os.getenv("API_MODEL")
 API_TIMEOUT = int(os.getenv("API_TIMEOUT", 60))
 API_TEMPERATURE = float(os.getenv("API_TEMPERATURE", 0.7))
+logger = logging.getLogger(__name__)
 
 
 def get_message_history(session_id: str) -> DbChatMessageHistory:
@@ -44,7 +46,7 @@ class AgentLLM:
             timeout=timeout,
             temperature=API_TEMPERATURE,
         )
-        print("LLM initialized")
+        logger.info("LLM initialized.")
 
     @times
     def think(self, input_text: str, session_id: str):
