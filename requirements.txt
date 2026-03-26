@@ -1,8 +1,4 @@
-huggingface-hub
---index-url https://mirrors.aliyun.com/pypi/simple
-#环境配置
 python-dotenv
-#LangChain
 langchain-openai
 langchain-core
 langchain-classic
@@ -17,5 +13,9 @@ sqlalchemy
 pgvector
 numpy
 fastapi
+python-multipart
+redis
 sentence-transformers
 torch
+huggingface-hub
+--index-url https://mirrors.aliyun.com/pypi/simple

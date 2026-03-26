@@ -1,53 +1,39 @@
-import os
-import asyncio
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage, AIMessage
+from fastapi.middleware.cors import CORSMiddleware
 
-from util.agent import AgentLLM
-from util.DbChatMessageHistory import DbChatMessageHistory
+from controller.chat_controller import router as chat_router
+from controller.config_controller import router as config_router
+from util.db_models import init_db
+from util.embeddings_models import init_embeddings
+from util.knowledge_base import ensure_default_definition_sources
+from util.redis_client import get_redis_client
 
-app = FastAPI()
-llmClient = AgentLLM()
 
-async def generate_response(input_text: str, session_id: str):
-    history = DbChatMessageHistory(session_id=session_id)
-    full_response = ""
-    
-    try:
-        print("--- 调用LLM ---")
-        
-        # 使用 asyncio.to_thread 将同步生成器转换为异步
-        loop = asyncio.get_event_loop()
-        
-        def run_think():
-            return list(llmClient.think(input_text, session_id))
-        
-        chunks = await loop.run_in_executor(None, run_think)
-        
-        for chunk in chunks:
-            if "output" in chunk:
-                output = chunk["output"]
-                print(f"AI: {output}", end="", flush=True)
-                full_response += output
-                yield f"data: {output}\n\n"
-            elif "actions" in chunk:
-                print(f"[工具调用] {chunk['actions']}")
-        
-        history.add_message(HumanMessage(content=input_text))
-        history.add_message(AIMessage(content=full_response))
-    except Exception as e:
-        print(f"Error: {e}")
-        yield f"data: Error: {str(e)}\n\n"
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    print("Initializing application resources...")
+    init_db()
+    init_embeddings()
+    get_redis_client().ping()
+    ensure_default_definition_sources()
+    print("Application resources ready.")
+    yield
 
-@app.post("/agent-talk")
-async def talk(input_text: str, session_id: str):
-    return StreamingResponse(
-        generate_response(input_text, session_id),
-        media_type="text/event-stream"
-    )
+
+app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(chat_router)
+app.include_router(config_router)
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
