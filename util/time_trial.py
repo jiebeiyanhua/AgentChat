@@ -1,15 +1,17 @@
+﻿import logging
 import time
 from functools import wraps
+
+logger = logging.getLogger(__name__)
 
 
 def times(func):
     @wraps(func)
-    def wrapper(*args,**kwargs):
+    def wrapper(*args, **kwargs):
         start_time = time.process_time()
-        result = func(*args,**kwargs)
+        result = func(*args, **kwargs)
         end_time = time.process_time()
-        print(f"本次执行所花费了{end_time-start_time:4f}秒")
+        logger.info("Function '%s' executed in %.4f seconds.", func.__name__, end_time - start_time)
         return result
+
     return wrapper
-
-

@@ -1,4 +1,5 @@
 import os
+import logging
 
 import requests
 from dotenv import load_dotenv
@@ -22,6 +23,7 @@ API_URL = os.getenv("API_URL")
 API_MODEL = os.getenv("API_MODEL")
 API_TIMEOUT = int(os.getenv("API_TIMEOUT", 60))
 API_TEMPERATURE = float(os.getenv("API_TEMPERATURE", 0.7))
+logger = logging.getLogger(__name__)
 LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or "openai").strip().lower()
 OLLAMA_BASE_URL = (os.getenv("OLLAMA_BASE_URL") or "http://ollama:11434").rstrip("/")
 OLLAMA_CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL")
@@ -66,6 +68,7 @@ class AgentLLM:
         api_key = api_key or API_KEY
         api_url = api_url or API_URL
         api_model = api_model or API_MODEL
+        timeout = timeout or API_TIMEOUT
 
         if not all([api_key, api_url, api_model]):
             raise ValueError("Model id, API key, and API url must be configured.")
@@ -77,7 +80,7 @@ class AgentLLM:
             timeout=timeout,
             temperature=API_TEMPERATURE,
         )
-        print(f"LLM initialized with provider: {provider}")
+        logger.info("LLM initialized.")
 
     @times
     def think(self, input_text: str, session_id: str):

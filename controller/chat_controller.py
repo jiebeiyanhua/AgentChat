@@ -1,5 +1,6 @@
-﻿import asyncio
+import asyncio
 import json
+import logging
 from contextlib import suppress
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
@@ -14,6 +15,7 @@ from util.time_utils import format_datetime
 
 router = APIRouter()
 llm_client = AgentLLM()
+logger = logging.getLogger(__name__)
 
 
 def serialize_db_history_message(message: ChatMessage) -> dict:
@@ -194,18 +196,19 @@ async def stream_agent_events(input_text: str, session_id: str):
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict] = asyncio.Queue()
     full_response = ""
-    history.add_message(HumanMessage(content=input_text))
 
     def run_think():
         try:
-            print("--- Calling LLM ---")
+            logger.info("Calling LLM for session_id=%s.", session_id)
             for chunk in llm_client.think(input_text, session_id):
                 if "output" in chunk:
                     output = chunk["output"]
-                    print(f"AI: {output}", end="", flush=True)
+                    logger.debug("Streaming chunk received, length=%d.", len(output))
                     loop.call_soon_threadsafe(queue.put_nowait, {"type": "chunk", "content": output})
                 elif "actions" in chunk:
-                    print(f"[Tool action] {chunk['actions']}")
+                    logger.info("Tool action triggered: %s", chunk["actions"])
+                    loop.call_soon_threadsafe(queue.put_nowait, {"type": "action", "content": str(chunk["actions"])})
+                    logger.info(f"[Tool action] {chunk['actions']}")
                     actions = chunk["actions"]
                     if not isinstance(actions, list):
                         actions = [actions]
@@ -243,7 +246,7 @@ async def stream_agent_events(input_text: str, session_id: str):
 
             loop.call_soon_threadsafe(queue.put_nowait, {"type": "done"})
         except Exception as exc:
-            print(f"Error: {exc}")
+            logger.exception("Error while streaming LLM events for session_id=%s: %s", session_id, exc)
             loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "content": str(exc)})
 
     worker = asyncio.create_task(asyncio.to_thread(run_think))
@@ -355,4 +358,4 @@ async def websocket_talk(websocket: WebSocket):
                 elif event["type"] == "done":
                     await websocket.send_json({"type": "done", "message": "[DONE]"})
     except WebSocketDisconnect:
-        print("WebSocket disconnected")
+        logger.info("WebSocket disconnected.")

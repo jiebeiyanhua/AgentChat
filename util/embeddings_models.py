@@ -1,5 +1,6 @@
 import os
 import threading
+import logging
 
 import numpy as np
 import requests
@@ -25,6 +26,7 @@ if EMBEDDING_PROVIDER == "huggingface" and (not MODEL or not DEVICE):
 _embeddings = None
 _lock = threading.Lock()
 _initialized = False
+logger = logging.getLogger(__name__)
 
 
 def _should_normalize() -> bool:
@@ -46,7 +48,7 @@ def _normalize_vectors(vectors: list[list[float]]) -> list[list[float]]:
 
 
 def ensure_model_downloaded():
-    print(f"Checking embedding model cache: {MODEL}")
+    logger.info("Checking embedding model cache: %s", MODEL)
     snapshot_download(
         repo_id=MODEL,
         cache_dir="./models",
@@ -56,12 +58,12 @@ def ensure_model_downloaded():
 def get_model_path():
     cache_dir = "./models"
     if not os.path.exists(cache_dir):
-        print(f"Model cache directory does not exist: {cache_dir}")
+        logger.warning("Model cache directory does not exist: %s", cache_dir)
         return MODEL
 
     model_parts = MODEL.split("/")
     if len(model_parts) != 2:
-        print(f"Unexpected model name format: {MODEL}")
+        logger.warning("Unexpected model name format: %s", MODEL)
         return MODEL
 
     org, model_name = model_parts
@@ -78,10 +80,10 @@ def get_model_path():
             ]
             if snapshot_dirs:
                 actual_model_path = os.path.join(snapshots_dir, snapshot_dirs[0])
-                print(f"Using cached embedding snapshot: {actual_model_path}")
+                logger.info("Using cached embedding snapshot: %s", actual_model_path)
                 return actual_model_path
 
-    print("Searching model files in cache directory...")
+    logger.info("Searching model files in cache directory...")
     for root, _, files in os.walk(cache_dir):
         if any(
             filename in files
@@ -92,10 +94,10 @@ def get_model_path():
                 "sentence_bert_config.json",
             ]
         ):
-            print(f"Using discovered model directory: {root}")
+            logger.info("Using discovered model directory: %s", root)
             return root
 
-    print(f"Local model cache not found, fallback to remote model id: {MODEL}")
+    logger.warning("Local model cache not found, fallback to remote model id: %s", MODEL)
     return MODEL
 
 
@@ -138,10 +140,10 @@ def _init_embeddings():
                 from sentence_transformers import SentenceTransformer
 
                 if os.path.exists(model_path) and os.path.isdir(model_path):
-                    print(f"Loading embedding model from local path: {model_path}")
+                    logger.info(f"Loading embedding model from local path: {model_path}")
                     st_model = SentenceTransformer(model_path, device=DEVICE)
                 else:
-                    print(f"Loading embedding model from HuggingFace: {MODEL}")
+                    logger.info(f"Loading embedding model from HuggingFace: {MODEL}")
                     st_model = SentenceTransformer(MODEL, device=DEVICE)
 
                 _embeddings = SentenceTransformerEmbeddings(
@@ -150,15 +152,16 @@ def _init_embeddings():
                 )
 
             test_result = _embeddings.embed_query("test")
-            print(
+            logger.info(
                 f"[Thread {threading.current_thread().ident}] "
                 f"Embedding model ready, vector dimension: {len(test_result)}"
             )
             _initialized = True
         except Exception as exc:
-            print(
-                f"[Thread {threading.current_thread().ident}] "
-                f"Failed to initialize embedding model: {exc}"
+            logger.exception(
+                "[Thread %s] Failed to initialize embedding model: %s",
+                threading.current_thread().ident,
+                exc,
             )
             import traceback
 
