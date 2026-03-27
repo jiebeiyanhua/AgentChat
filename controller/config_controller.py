@@ -1,6 +1,6 @@
-from pathlib import Path
+﻿from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from util.knowledge_base import (
@@ -60,6 +60,7 @@ async def get_knowledge_sources():
                 "source_name": item.source_name,
                 "source_type": item.source_type,
                 "file_path": item.file_path,
+                "description": item.description,
                 "chunk_count": item.chunk_count,
                 "updated_at": item.updated_at,
             }
@@ -69,14 +70,15 @@ async def get_knowledge_sources():
 
 
 @router.post("/knowledge-sources/upload")
-async def upload_knowledge_file(file: UploadFile = File(...)):
+async def upload_knowledge_file(file: UploadFile = File(...), description: str | None = Form(default=None)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
     content = await file.read()
     try:
-        result = store_uploaded_knowledge(file.filename, content)
+        result = store_uploaded_knowledge(file.filename, content, description=description)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return result
+

@@ -1,6 +1,8 @@
 import os
 import threading
 
+import numpy as np
+import requests
 from dotenv import load_dotenv
 from huggingface_hub import snapshot_download
 
@@ -9,13 +11,38 @@ load_dotenv()
 MODEL = os.getenv("MODEL")
 DEVICE = os.getenv("DEVICE")
 NORMALIZE_EMBEDDINGS = os.getenv("NORMALIZE_EMBEDDINGS")
+EMBEDDING_PROVIDER = (os.getenv("EMBEDDING_PROVIDER") or "huggingface").strip().lower()
+OLLAMA_BASE_URL = (os.getenv("OLLAMA_BASE_URL") or "http://ollama:11434").rstrip("/")
+OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 
-if not MODEL or not DEVICE or not NORMALIZE_EMBEDDINGS:
+if not NORMALIZE_EMBEDDINGS:
+    raise ValueError("Please configure NORMALIZE_EMBEDDINGS in .env")
+
+if EMBEDDING_PROVIDER == "huggingface" and (not MODEL or not DEVICE):
     raise ValueError("Please configure MODEL, DEVICE, and NORMALIZE_EMBEDDINGS in .env")
 
 _embeddings = None
 _lock = threading.Lock()
 _initialized = False
+
+
+def _should_normalize() -> bool:
+    return NORMALIZE_EMBEDDINGS.lower() == "true"
+
+
+def _normalize_vector(vector: list[float]) -> list[float]:
+    if not _should_normalize():
+        return vector
+    array = np.array(vector, dtype=float)
+    norm = np.linalg.norm(array)
+    if norm == 0:
+        return array.tolist()
+    return (array / norm).tolist()
+
+
+def _normalize_vectors(vectors: list[list[float]]) -> list[list[float]]:
+    return [_normalize_vector(vector) for vector in vectors]
 
 
 def ensure_model_downloaded():
@@ -72,6 +99,15 @@ def get_model_path():
     return MODEL
 
 
+def ensure_ollama_model(model_name: str):
+    response = requests.post(
+        f"{OLLAMA_BASE_URL}/api/pull",
+        json={"model": model_name, "stream": False},
+        timeout=OLLAMA_TIMEOUT,
+    )
+    response.raise_for_status()
+
+
 def _init_embeddings():
     global _embeddings, _initialized
     if _initialized:
@@ -82,23 +118,36 @@ def _init_embeddings():
             return
 
         print(f"[Thread {threading.current_thread().ident}] Initializing embedding model...")
-        ensure_model_downloaded()
-        model_path = get_model_path()
 
         try:
-            from sentence_transformers import SentenceTransformer
+            if EMBEDDING_PROVIDER == "ollama":
+                model_name = OLLAMA_EMBED_MODEL or MODEL
+                if not model_name:
+                    raise ValueError("Please configure OLLAMA_EMBED_MODEL or MODEL when EMBEDDING_PROVIDER=ollama.")
 
-            if os.path.exists(model_path) and os.path.isdir(model_path):
-                print(f"Loading embedding model from local path: {model_path}")
-                st_model = SentenceTransformer(model_path, device=DEVICE)
+                ensure_ollama_model(model_name)
+                _embeddings = OllamaEmbeddings(
+                    model=model_name,
+                    base_url=OLLAMA_BASE_URL,
+                    timeout=OLLAMA_TIMEOUT,
+                )
             else:
-                print(f"Loading embedding model from HuggingFace: {MODEL}")
-                st_model = SentenceTransformer(MODEL, device=DEVICE)
+                ensure_model_downloaded()
+                model_path = get_model_path()
 
-            _embeddings = SentenceTransformerEmbeddings(
-                st_model,
-                normalize_embeddings=NORMALIZE_EMBEDDINGS.lower() == "true",
-            )
+                from sentence_transformers import SentenceTransformer
+
+                if os.path.exists(model_path) and os.path.isdir(model_path):
+                    print(f"Loading embedding model from local path: {model_path}")
+                    st_model = SentenceTransformer(model_path, device=DEVICE)
+                else:
+                    print(f"Loading embedding model from HuggingFace: {MODEL}")
+                    st_model = SentenceTransformer(MODEL, device=DEVICE)
+
+                _embeddings = SentenceTransformerEmbeddings(
+                    st_model,
+                    normalize_embeddings=_should_normalize(),
+                )
 
             test_result = _embeddings.embed_query("test")
             print(
@@ -153,3 +202,45 @@ class SentenceTransformerEmbeddings:
             convert_to_numpy=True,
         )
         return embedding.tolist()
+
+
+class OllamaEmbeddings:
+    def __init__(self, model: str, base_url: str, timeout: int = 120):
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+
+    def _post_embed(self, payload: dict) -> dict:
+        response = requests.post(
+            f"{self.base_url}/api/embed",
+            json=payload,
+            timeout=self.timeout,
+        )
+        if response.ok:
+            return response.json()
+
+        fallback_response = requests.post(
+            f"{self.base_url}/api/embeddings",
+            json={"model": self.model, "prompt": payload["input"] if isinstance(payload["input"], str) else payload["input"][0]},
+            timeout=self.timeout,
+        )
+        fallback_response.raise_for_status()
+        return fallback_response.json()
+
+    def embed_documents(self, texts):
+        if not texts:
+            return []
+        data = self._post_embed({"model": self.model, "input": texts})
+        if "embeddings" in data:
+            return _normalize_vectors(data["embeddings"])
+        if "embedding" in data:
+            return [_normalize_vector(data["embedding"])]
+        raise ValueError("Unexpected Ollama embedding response")
+
+    def embed_query(self, text):
+        data = self._post_embed({"model": self.model, "input": text})
+        if "embeddings" in data:
+            return _normalize_vector(data["embeddings"][0])
+        if "embedding" in data:
+            return _normalize_vector(data["embedding"])
+        raise ValueError("Unexpected Ollama embedding response")

@@ -1,10 +1,11 @@
-import os
-from datetime import datetime, timezone
+﻿import os
 
 from dotenv import load_dotenv
 from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+
+from util.time_utils import now_local
 
 load_dotenv()
 
@@ -32,7 +33,7 @@ class ChatMessage(Base):
     message_type = Column(String, nullable=False)
     content = Column(Text, nullable=False)
     embedding = Column(Text, nullable=True)
-    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    timestamp = Column(DateTime, default=now_local)
     additional_metadata = Column(Text, nullable=True)
 
 
@@ -48,7 +49,21 @@ class KnowledgeChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
     embedding = Column(Text, nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=now_local, nullable=False)
+
+
+class KnowledgeDefinition(Base):
+    __tablename__ = "knowledge_definitions"
+
+    id = Column(String, primary_key=True)
+    source_key = Column(String, unique=True, index=True, nullable=False)
+    source_name = Column(String, nullable=False)
+    source_type = Column(String, nullable=False)
+    file_path = Column(String, nullable=True)
+    description = Column(Text, nullable=False)
+    content_hash = Column(String, nullable=False)
+    chunk_count = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, default=now_local, nullable=False)
 
 
 def init_db():

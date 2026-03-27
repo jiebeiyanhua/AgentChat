@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
 import { buildHttpUrl } from '../utils/api'
@@ -8,12 +8,14 @@ interface KnowledgeSource {
   source_name: string
   source_type: string
   file_path: string | null
+  description: string
   chunk_count: number
   updated_at: string | null
 }
 
 interface KnowledgeUploadResult {
   source_name: string
+  description: string
   chunk_count?: number
   updated?: boolean
 }
@@ -21,19 +23,11 @@ interface KnowledgeUploadResult {
 const knowledgeStatus = ref('')
 const uploadingKnowledge = ref(false)
 const selectedKnowledgeFile = ref<File | null>(null)
+const knowledgeDescription = ref('')
 const knowledgeSources = ref<KnowledgeSource[]>([])
 
 function formatTime(timestamp: string | null) {
-  if (!timestamp) return '--'
-  const date = new Date(timestamp)
-  if (Number.isNaN(date.getTime())) return '--'
-
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
+  return timestamp || '--'
 }
 
 async function loadKnowledgeSources() {
@@ -69,6 +63,7 @@ async function uploadKnowledgeFile() {
   try {
     const formData = new FormData()
     formData.append('file', selectedKnowledgeFile.value)
+    formData.append('description', knowledgeDescription.value.trim())
 
     const response = await fetch(buildHttpUrl('/knowledge-sources/upload'), {
       method: 'POST',
@@ -83,9 +78,10 @@ async function uploadKnowledgeFile() {
 
     const payload = (await response.json()) as KnowledgeUploadResult
     knowledgeStatus.value = payload.updated
-      ? `${payload.source_name} 已入库，共 ${payload.chunk_count ?? 0} 段`
-      : `${payload.source_name} 内容未变化，跳过重新切分`
+      ? `${payload.source_name} 已入库，切分 ${payload.chunk_count ?? 0} 段`
+      : `${payload.source_name} 内容未变化，已复用现有分片`
     selectedKnowledgeFile.value = null
+    knowledgeDescription.value = ''
 
     const fileInput = document.getElementById('knowledge-upload-input') as HTMLInputElement | null
     if (fileInput) fileInput.value = ''
@@ -107,7 +103,7 @@ onMounted(loadKnowledgeSources)
     <section class="content__header">
       <div>
         <h1>知识库</h1>
-        <p>上传文本或 Markdown 文件后会自动切分，并将分片文本写入数据库供知识库检索工具使用。</p>
+        <p>上传文本或 Markdown 文件后会自动切分，同时将知识库简介写入定义表，供 Agent 先挑选合适知识库再检索。</p>
       </div>
       <div class="status-card">{{ knowledgeStatus || '支持重复上传，同名文件会覆盖旧内容' }}</div>
     </section>
@@ -118,6 +114,7 @@ onMounted(loadKnowledgeSources)
           <input id="knowledge-upload-input" type="file" accept=".txt,.md,.markdown,.text" @change="handleKnowledgeFileChange" />
           <span>{{ selectedKnowledgeFile?.name || '选择知识库文件' }}</span>
         </label>
+        <input v-model="knowledgeDescription" class="description-input" type="text" maxlength="180" placeholder="输入知识库简介，方便 Agent 先做选择" />
         <button class="secondary-button" type="button" @click="loadKnowledgeSources">刷新列表</button>
         <button class="primary-button" type="button" :disabled="!selectedKnowledgeFile || uploadingKnowledge" @click="uploadKnowledgeFile">
           {{ uploadingKnowledge ? '上传中' : '上传入库' }}
@@ -130,9 +127,11 @@ onMounted(loadKnowledgeSources)
             <strong>{{ source.source_name }}</strong>
             <span class="source-tag">{{ source.source_type }}</span>
           </div>
+          <p class="knowledge-item__description">{{ source.description }}</p>
           <div class="knowledge-item__meta">分片数：{{ source.chunk_count }}</div>
           <div class="knowledge-item__meta">更新时间：{{ formatTime(source.updated_at) }}</div>
           <div class="knowledge-item__meta">来源：{{ source.file_path || source.source_key }}</div>
+          <div class="knowledge-item__meta">source_key：{{ source.source_key }}</div>
         </article>
       </div>
     </section>
@@ -197,15 +196,15 @@ onMounted(loadKnowledgeSources)
 }
 
 .upload-card {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(240px, 1fr) auto auto;
   gap: 12px;
 }
 
 .upload-input {
   display: inline-flex;
   align-items: center;
-  min-width: 320px;
+  min-width: 0;
   padding: 0 14px;
   height: 42px;
   border: 1px dashed rgba(217, 119, 6, 0.4);
@@ -217,6 +216,16 @@ onMounted(loadKnowledgeSources)
 
 .upload-input input {
   display: none;
+}
+
+.description-input {
+  min-width: 0;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(217, 119, 6, 0.16);
+  border-radius: 14px;
+  background: #fff;
+  color: #7c5c2f;
 }
 
 .knowledge-list {
@@ -240,6 +249,13 @@ onMounted(loadKnowledgeSources)
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
+}
+
+.knowledge-item__description {
+  margin: 0 0 10px;
+  color: #7c5c2f;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .knowledge-item__meta {
@@ -285,5 +301,11 @@ onMounted(loadKnowledgeSources)
 .secondary-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+@media (max-width: 960px) {
+  .upload-card {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

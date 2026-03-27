@@ -1,11 +1,11 @@
-import json
+﻿import json
 import uuid
-from datetime import datetime, timezone
 from typing import List
 
 import numpy as np
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import BaseMessage, messages_from_dict, message_to_dict
+from sqlalchemy import or_
 
 from util.db_models import ChatMessage, SessionLocal
 from util.embeddings_models import get_embeddings
@@ -14,6 +14,22 @@ from util.redis_client import (
     cache_history_messages,
     get_cached_history_messages,
 )
+from util.time_utils import format_datetime, now_local
+
+
+def _load_embedding_array(raw_embedding: str | None) -> np.ndarray | None:
+    if not raw_embedding:
+        return None
+
+    try:
+        embedding = json.loads(raw_embedding)
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+    array = np.array(embedding, dtype=float)
+    if array.ndim != 1 or array.size == 0:
+        return None
+    return array
 
 
 class DbChatMessageHistory(BaseChatMessageHistory):
@@ -27,12 +43,12 @@ class DbChatMessageHistory(BaseChatMessageHistory):
         self.collection_name = collection_name
         self.persist_directory = persist_directory
 
-    def _serialize_message_record(self, msg_id: str, timestamp: datetime, message_dict: dict) -> dict:
+    def _serialize_message_record(self, msg_id: str, timestamp, message_dict: dict) -> dict:
         return {
             "id": msg_id,
             "content": message_dict,
             "message_type": message_dict["type"],
-            "timestamp": timestamp.isoformat(),
+            "timestamp": format_datetime(timestamp),
         }
 
     def _records_to_messages(self, records: list[dict]) -> List[BaseMessage]:
@@ -72,7 +88,7 @@ class DbChatMessageHistory(BaseChatMessageHistory):
                         "id": msg.id,
                         "content": json.loads(msg.content),
                         "message_type": msg.message_type,
-                        "timestamp": msg.timestamp.isoformat(),
+                        "timestamp": format_datetime(msg.timestamp),
                     }
                 )
 
@@ -86,7 +102,7 @@ class DbChatMessageHistory(BaseChatMessageHistory):
         try:
             msg_dict = message_to_dict(message)
             doc_content = json.dumps(msg_dict, ensure_ascii=False)
-            timestamp = datetime.now(timezone.utc)
+            timestamp = now_local()
             message_id = str(uuid.uuid4())
 
             embeddings = get_embeddings()
@@ -95,7 +111,7 @@ class DbChatMessageHistory(BaseChatMessageHistory):
 
             metadata = {
                 "session_id": self.session_id,
-                "timestamp": timestamp.isoformat(),
+                "timestamp": format_datetime(timestamp),
                 "type": msg_dict["type"],
             }
 
@@ -106,7 +122,7 @@ class DbChatMessageHistory(BaseChatMessageHistory):
                 content=doc_content,
                 embedding=embedding_str,
                 timestamp=timestamp,
-                additional_metadata=json.dumps(metadata),
+                additional_metadata=json.dumps(metadata, ensure_ascii=False),
             )
 
             db.add(chat_message)
@@ -115,6 +131,41 @@ class DbChatMessageHistory(BaseChatMessageHistory):
             append_history_message(
                 self.session_id,
                 self._serialize_message_record(message_id, timestamp, msg_dict),
+            )
+        except Exception as exc:
+            db.rollback()
+            raise exc
+        finally:
+            db.close()
+
+    def add_system_message(self, content: str, metadata: dict | None = None) -> None:
+        db = SessionLocal()
+        try:
+            timestamp = now_local()
+            message_id = str(uuid.uuid4())
+            payload = {
+                "type": "system",
+                "data": {
+                    "content": content,
+                },
+            }
+
+            chat_message = ChatMessage(
+                id=message_id,
+                session_id=self.session_id,
+                message_type="system",
+                content=json.dumps(payload, ensure_ascii=False),
+                embedding=None,
+                timestamp=timestamp,
+                additional_metadata=json.dumps(metadata or {}, ensure_ascii=False),
+            )
+
+            db.add(chat_message)
+            db.commit()
+
+            append_history_message(
+                self.session_id,
+                self._serialize_message_record(message_id, timestamp, payload),
             )
         except Exception as exc:
             db.rollback()
@@ -138,18 +189,31 @@ class DbChatMessageHistory(BaseChatMessageHistory):
         db = SessionLocal()
         try:
             embeddings = get_embeddings()
-            query_vector = np.array(embeddings.embed_query(query))
+            query_vector = np.array(embeddings.embed_query(query), dtype=float)
 
-            results = db.query(ChatMessage).filter(ChatMessage.session_id == self.session_id).all()
+            results = (
+                db.query(ChatMessage)
+                .filter(ChatMessage.session_id == self.session_id)
+                .filter(or_(ChatMessage.message_type == "human", ChatMessage.message_type == "ai"))
+                .all()
+            )
             if not results:
                 return []
 
             similarities = []
+            skipped_dimension_mismatches = 0
             for msg in results:
-                if msg.embedding:
-                    stored_embedding = np.array(json.loads(msg.embedding))
-                    similarity = np.dot(query_vector, stored_embedding)
-                    similarities.append((similarity, msg))
+                stored_embedding = _load_embedding_array(msg.embedding)
+                if stored_embedding is None:
+                    continue
+                if stored_embedding.shape != query_vector.shape:
+                    skipped_dimension_mismatches += 1
+                    continue
+                similarity = np.dot(query_vector, stored_embedding)
+                similarities.append((similarity, msg))
+
+            if not similarities and skipped_dimension_mismatches:
+                return []
 
             similarities.sort(key=lambda item: item[0], reverse=True)
             top_k = similarities[:k]
@@ -166,11 +230,12 @@ class DbChatMessageHistory(BaseChatMessageHistory):
         db = SessionLocal()
         try:
             embeddings = get_embeddings()
-            query_vector = np.array(embeddings.embed_query(query))
+            query_vector = np.array(embeddings.embed_query(query), dtype=float)
 
             results = (
                 db.query(ChatMessage)
                 .filter(ChatMessage.session_id == self.session_id)
+                .filter(or_(ChatMessage.message_type == "human", ChatMessage.message_type == "ai"))
                 .order_by(ChatMessage.timestamp)
                 .all()
             )
@@ -183,11 +248,19 @@ class DbChatMessageHistory(BaseChatMessageHistory):
                 return []
 
             similarities = []
+            skipped_dimension_mismatches = 0
             for msg in candidate_results:
-                if msg.embedding:
-                    stored_embedding = np.array(json.loads(msg.embedding))
-                    similarity = np.dot(query_vector, stored_embedding)
-                    similarities.append((similarity, msg))
+                stored_embedding = _load_embedding_array(msg.embedding)
+                if stored_embedding is None:
+                    continue
+                if stored_embedding.shape != query_vector.shape:
+                    skipped_dimension_mismatches += 1
+                    continue
+                similarity = np.dot(query_vector, stored_embedding)
+                similarities.append((similarity, msg))
+
+            if not similarities and skipped_dimension_mismatches:
+                return []
 
             similarities.sort(key=lambda item: item[0], reverse=True)
             top_k = similarities[:k]

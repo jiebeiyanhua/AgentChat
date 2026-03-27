@@ -1,16 +1,19 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 
 import { buildHttpUrl } from '../utils/api'
 import { wsService } from '../utils/websocket'
 
 type ChatRole = 'user' | 'assistant' | 'system'
+type MessageKind = 'chat' | 'tool' | 'knowledge'
 
 interface ChatMessage {
   id: string
   role: ChatRole
   content: string
   timestamp: string
+  messageKind: MessageKind
+  hideTimestamp: boolean
   pending?: boolean
 }
 
@@ -18,7 +21,9 @@ interface HistoryMessage {
   id?: string | null
   role: ChatRole
   content: string
-  timestamp: string
+  timestamp?: string | null
+  message_kind?: MessageKind | null
+  hide_timestamp?: boolean | null
 }
 
 const defaultSessionId = () => `session-${Math.random().toString(36).slice(2, 10)}`
@@ -26,7 +31,6 @@ const defaultSessionId = () => `session-${Math.random().toString(36).slice(2, 10
 const storedSessionId = localStorage.getItem('pyai_session_id')
 const sessionId = ref(storedSessionId || defaultSessionId())
 
-// 保存session_id到localStorage
 if (!storedSessionId) {
   localStorage.setItem('pyai_session_id', sessionId.value)
 }
@@ -45,40 +49,27 @@ const connectionBadge = computed(() => {
   return { tone: 'danger', label: '未连接' }
 })
 
-function nowIso() {
-  return new Date().toISOString()
+function padTime(value: number) {
+  return String(value).padStart(2, '0')
 }
 
-function formatTime(timestamp: string | null) {
-  if (!timestamp) return '--'
-  const date = new Date(timestamp)
-  if (Number.isNaN(date.getTime())) return '--'
-
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
+function nowText() {
+  const date = new Date()
+  return `${date.getFullYear()}-${padTime(date.getMonth() + 1)}-${padTime(date.getDate())} ${padTime(date.getHours())}:${padTime(date.getMinutes())}:${padTime(date.getSeconds())}`
 }
 
-function summarizeSystemMessage(content: string) {
-  const cleanContent = content.replace(/\s+/g, ' ').trim()
-  if (!cleanContent) return ''
-
-  if (cleanContent.toLowerCase().includes('retrieve_profile')) {
-    return '知识库检索'
-  }
-
-  return '工具调用'
+function formatTime(timestamp: string | null | undefined) {
+  return timestamp || '--'
 }
 
 function toDisplayMessage(message: HistoryMessage): ChatMessage {
   return {
     id: message.id ?? crypto.randomUUID(),
     role: message.role,
-    content: message.role === 'system' ? summarizeSystemMessage(message.content) : message.content,
-    timestamp: message.timestamp || nowIso(),
+    content: message.content,
+    timestamp: message.timestamp || nowText(),
+    messageKind: message.message_kind || 'chat',
+    hideTimestamp: Boolean(message.hide_timestamp),
     pending: false,
   }
 }
@@ -90,16 +81,47 @@ function scrollToBottom() {
   })
 }
 
-function pushMessage(role: ChatRole, content: string, pending = false, timestamp = nowIso()) {
-  const displayContent = role === 'system' ? summarizeSystemMessage(content) : content
-  if (role === 'system' && !displayContent) return
-
+function pushMessage(role: ChatRole, content: string, pending = false, timestamp = nowText()) {
   messages.value.push({
     id: crypto.randomUUID(),
     role,
-    content: displayContent,
-    pending,
+    content,
     timestamp,
+    messageKind: 'chat',
+    hideTimestamp: false,
+    pending,
+  })
+  scrollToBottom()
+}
+
+function pushActionMessage(content: string, messageKind: MessageKind = 'tool', hideTimestamp = true) {
+  const displayContent = content.trim()
+  if (!displayContent) return
+
+  messages.value.push({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: displayContent,
+    timestamp: nowText(),
+    messageKind,
+    hideTimestamp,
+    pending: false,
+  })
+  scrollToBottom()
+}
+
+function pushAssistantNote(content: string, hideTimestamp = false) {
+  const displayContent = content.trim()
+  if (!displayContent) return
+
+  messages.value.push({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: displayContent,
+    timestamp: nowText(),
+    messageKind: 'chat',
+    hideTimestamp,
+    pending: false,
   })
   scrollToBottom()
 }
@@ -115,8 +137,10 @@ function ensureAssistantMessage() {
     id: crypto.randomUUID(),
     role: 'assistant',
     content: '',
+    timestamp: nowText(),
+    messageKind: 'chat',
+    hideTimestamp: false,
     pending: true,
-    timestamp: nowIso(),
   }
   currentAssistantMessageId = assistantMessage.id
   messages.value.push(assistantMessage)
@@ -139,7 +163,7 @@ async function loadHistory() {
     const payload = (await response.json()) as { messages: HistoryMessage[] }
     messages.value = payload.messages
       .map(toDisplayMessage)
-      .filter((message) => message.role !== 'system' || Boolean(message.content))
+      .filter((message) => Boolean(message.content))
     scrollToBottom()
   } catch (error) {
     console.error(error)
@@ -156,7 +180,12 @@ function handleSocketMessage(payload: any) {
   }
 
   if (payload.type === 'action') {
-    pushMessage('system', payload.content ?? 'Tool action')
+    pushActionMessage(payload.content ?? '工具调用', payload.message_kind ?? 'tool', payload.hide_timestamp ?? true)
+    return
+  }
+
+  if (payload.type === 'assistant_note') {
+    pushAssistantNote(payload.content ?? '', payload.hide_timestamp ?? false)
     return
   }
 
@@ -218,27 +247,21 @@ function handleTextareaKeydown(event: KeyboardEvent) {
   }
 }
 
-// 监听sessionId变化，更新WebSocket服务的sessionId
 watch(sessionId, (newSessionId) => {
   wsService.setSessionId(newSessionId)
 })
 
 onMounted(() => {
-  // 设置sessionId和消息回调
   wsService.setSessionId(sessionId.value)
   wsService.setMessageCallback(handleSocketMessage)
-  
-  // 无论是否连接，都先加载历史记录
   loadHistory()
-  
-  // 如果还没有连接，尝试连接
+
   if (!wsService.state.isConnected) {
     wsService.connect()
   }
 })
 
 onBeforeUnmount(() => {
-  // 清理回调
   wsService.setMessageCallback(null)
 })
 </script>
@@ -248,7 +271,7 @@ onBeforeUnmount(() => {
     <section class="content__header">
       <div>
         <h1>聊天</h1>
-        <p>连接后即可与当前智能体会话，工具调用会显示为系统消息。</p>
+        <p>连接后即可与当前智能体会话，工具调用和知识库检索会作为左侧说明消息展示。</p>
       </div>
       <div class="status-stack">
         <div class="badge-row">
@@ -276,12 +299,12 @@ onBeforeUnmount(() => {
 
     <section ref="messageListRef" class="chat-panel">
       <template v-for="message in messages" :key="message.id">
-        <div class="time-divider">{{ formatTime(message.timestamp) }}</div>
-        <article class="chat-row" :class="`chat-row--${message.role}`">
-          <div v-if="message.role !== 'system'" class="avatar" :class="`avatar--${message.role}`">
+        <div v-if="!message.hideTimestamp" class="time-divider">{{ formatTime(message.timestamp) }}</div>
+        <article class="chat-row" :class="[`chat-row--${message.role}`, `chat-row--${message.messageKind}`]">
+          <div v-if="message.messageKind === 'chat'" class="avatar" :class="[`avatar--${message.role}`, `avatar--${message.messageKind}`]">
             {{ message.role === 'user' ? '你' : 'AI' }}
           </div>
-          <div class="chat-bubble" :class="`chat-bubble--${message.role}`">
+          <div class="chat-bubble" :class="[`chat-bubble--${message.role}`, `chat-bubble--${message.messageKind}`]">
             <div class="chat-bubble__body">{{ message.content }}</div>
           </div>
         </article>
@@ -426,6 +449,11 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
+.chat-row--tool,
+.chat-row--knowledge {
+  padding-left: 46px;
+}
+
 .avatar {
   display: grid;
   place-items: center;
@@ -440,6 +468,12 @@ onBeforeUnmount(() => {
 .avatar--assistant {
   background: #ffedd5;
   color: #c2410c;
+}
+
+.avatar--tool,
+.avatar--knowledge {
+  background: #fef3c7;
+  color: #b45309;
 }
 
 .avatar--user {
@@ -461,12 +495,12 @@ onBeforeUnmount(() => {
   background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
 }
 
-.chat-bubble--system {
-  max-width: 280px;
-  margin: 0 auto;
+.chat-bubble--tool,
+.chat-bubble--knowledge {
+  max-width: 76%;
   border-style: dashed;
-  color: #9a6b36;
-  background: #fffbeb;
+  color: #8a5a17;
+  background: linear-gradient(135deg, #fffdf4 0%, #fef3c7 100%);
   font-size: 13px;
 }
 

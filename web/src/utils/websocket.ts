@@ -25,7 +25,7 @@ class WebSocketService {
     this.sessionId = sessionId
   }
   
-  setMessageCallback(callback: (data: any) => void) {
+  setMessageCallback(callback: ((data: any) => void) | null) {
     this.messageCallback = callback
   }
   

@@ -1,4 +1,4 @@
-CREATE EXTENSION IF NOT EXISTS vector;
+﻿CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS chat_messages (
     id VARCHAR(255) PRIMARY KEY,
@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     message_type VARCHAR(50) NOT NULL,
     content TEXT NOT NULL,
     embedding TEXT,
-    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     additional_metadata TEXT
 );
 
@@ -23,8 +23,23 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
     chunk_index INTEGER NOT NULL,
     content TEXT NOT NULL,
     embedding TEXT NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_source_key ON knowledge_chunks(source_key);
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_updated_at ON knowledge_chunks(updated_at);
+
+CREATE TABLE IF NOT EXISTS knowledge_definitions (
+    id VARCHAR(255) PRIMARY KEY,
+    source_key VARCHAR(255) NOT NULL UNIQUE,
+    source_name VARCHAR(255) NOT NULL,
+    source_type VARCHAR(50) NOT NULL,
+    file_path TEXT,
+    description TEXT NOT NULL,
+    content_hash VARCHAR(64) NOT NULL,
+    chunk_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_definitions_source_key ON knowledge_definitions(source_key);
+CREATE INDEX IF NOT EXISTS idx_knowledge_definitions_updated_at ON knowledge_definitions(updated_at);

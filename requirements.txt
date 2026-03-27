@@ -7,7 +7,7 @@ langchain-huggingface
 langchain-community
 requests
 tavily
-uvicorn
+uvicorn[standard]
 psycopg2-binary
 sqlalchemy
 pgvector
