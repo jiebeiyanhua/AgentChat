@@ -62,7 +62,7 @@ class AgentLLM:
                 timeout=timeout,
                 temperature=API_TEMPERATURE,
             )
-            print(f"LLM initialized with Ollama model: {model_name}")
+            logger.info(f"LLM initialized with Ollama model: {model_name}")
             return
 
         api_key = api_key or API_KEY

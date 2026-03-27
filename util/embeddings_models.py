@@ -119,7 +119,7 @@ def _init_embeddings():
         if _initialized:
             return
 
-        print(f"[Thread {threading.current_thread().ident}] Initializing embedding model...")
+        logger.info(f"[Thread {threading.current_thread().ident}] Initializing embedding model...")
 
         try:
             if EMBEDDING_PROVIDER == "ollama":
