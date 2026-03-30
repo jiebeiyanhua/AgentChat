@@ -1,18 +1,16 @@
 import json
-import os
 from typing import Any
 
 import redis
-from dotenv import load_dotenv
 
-load_dotenv()
+from util.config import get_int, get_str
 
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_DB = int(os.getenv("REDIS_DB", "0"))
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or None
-HISTORY_CACHE_TTL = int(os.getenv("HISTORY_CACHE_TTL", "3600"))
-SESSION_HEARTBEAT_TTL = int(os.getenv("SESSION_HEARTBEAT_TTL", "120"))
+REDIS_HOST = get_str("redis.host", "localhost")
+REDIS_PORT = get_int("redis.port", 6379)
+REDIS_DB = get_int("redis.db", 0)
+REDIS_PASSWORD = get_str("redis.password") or None
+HISTORY_CACHE_TTL = get_int("redis.history_cache_ttl", 3600)
+SESSION_HEARTBEAT_TTL = get_int("redis.session_heartbeat_ttl", 120)
 
 _redis_client = redis.Redis(
     host=REDIS_HOST,

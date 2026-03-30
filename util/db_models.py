@@ -1,21 +1,18 @@
-import os
 import logging
 from datetime import datetime, timezone
 
-from dotenv import load_dotenv
 from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
+from util.config import get_str
 from util.time_utils import now_local
 
-load_dotenv()
-
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
-POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
-POSTGRES_DB = os.getenv("POSTGRES_DB")
-POSTGRES_USER = os.getenv("POSTGRES_USER")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+POSTGRES_HOST = get_str("postgres.host", "localhost")
+POSTGRES_PORT = get_str("postgres.port", "5432")
+POSTGRES_DB = get_str("postgres.db")
+POSTGRES_USER = get_str("postgres.user")
+POSTGRES_PASSWORD = get_str("postgres.password")
 
 if not all([POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD]):
     raise ValueError("Please configure complete PostgreSQL settings.")

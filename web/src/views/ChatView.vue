@@ -1,5 +1,7 @@
 ﻿<script setup lang="ts">
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import DOMPurify from 'dompurify'
+import MarkdownIt from 'markdown-it'
 
 import { buildHttpUrl } from '../utils/api'
 import { wsService } from '../utils/websocket'
@@ -37,9 +39,25 @@ if (!storedSessionId) {
 
 const inputText = ref('')
 const messages = ref<ChatMessage[]>([])
+const visibleCount = ref(10)
 
 const messageListRef = ref<HTMLElement | null>(null)
 let currentAssistantMessageId = ''
+let pendingPrependScrollTop: number | null = null
+let pendingPrependScrollHeight: number | null = null
+
+const visibleMessages = computed(() => {
+  if (visibleCount.value >= messages.value.length) return messages.value
+  return messages.value.slice(-visibleCount.value)
+})
+
+const markdown = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,
+})
+
+const hasHiddenHistory = computed(() => messages.value.length > visibleCount.value)
 
 const canSend = computed(() => Boolean(inputText.value.trim()) && !wsService.state.isStreaming)
 const shortWsUrl = computed(() => (wsService.wsUrl.value.length > 42 ? `${wsService.wsUrl.value.slice(0, 42)}...` : wsService.wsUrl.value))
@@ -62,6 +80,10 @@ function formatTime(timestamp: string | null | undefined) {
   return timestamp || '--'
 }
 
+function renderMarkdown(content: string) {
+  return DOMPurify.sanitize(markdown.render(content || ''))
+}
+
 function toDisplayMessage(message: HistoryMessage): ChatMessage {
   return {
     id: message.id ?? crypto.randomUUID(),
@@ -79,6 +101,32 @@ function scrollToBottom() {
     if (!messageListRef.value) return
     messageListRef.value.scrollTop = messageListRef.value.scrollHeight
   })
+}
+
+function resetVisibleWindow() {
+  visibleCount.value = Math.min(10, messages.value.length || 10)
+}
+
+function loadOlderMessages() {
+  if (!messageListRef.value || !hasHiddenHistory.value) return
+
+  pendingPrependScrollTop = messageListRef.value.scrollTop
+  pendingPrependScrollHeight = messageListRef.value.scrollHeight
+  visibleCount.value = Math.min(visibleCount.value + 10, messages.value.length)
+
+  nextTick(() => {
+    if (!messageListRef.value || pendingPrependScrollHeight === null || pendingPrependScrollTop === null) return
+    const heightDiff = messageListRef.value.scrollHeight - pendingPrependScrollHeight
+    messageListRef.value.scrollTop = pendingPrependScrollTop + heightDiff
+    pendingPrependScrollHeight = null
+    pendingPrependScrollTop = null
+  })
+}
+
+function handleMessageListScroll() {
+  if (!messageListRef.value) return
+  if (messageListRef.value.scrollTop > 24) return
+  loadOlderMessages()
 }
 
 function pushMessage(role: ChatRole, content: string, pending = false, timestamp = nowText()) {
@@ -164,6 +212,7 @@ async function loadHistory() {
     messages.value = payload.messages
       .map(toDisplayMessage)
       .filter((message) => Boolean(message.content))
+    resetVisibleWindow()
     scrollToBottom()
   } catch (error) {
     console.error(error)
@@ -210,6 +259,7 @@ function handleSocketMessage(payload: any) {
 
 function connectSocket() {
   wsService.connect()
+  loadHistory()
 }
 
 function disconnectSocket() {
@@ -235,6 +285,7 @@ function resetSession() {
   localStorage.setItem('pyai_session_id', newSessionId)
   wsService.setSessionId(newSessionId)
   messages.value = []
+  resetVisibleWindow()
   inputText.value = ''
   currentAssistantMessageId = ''
   scrollToBottom()
@@ -297,15 +348,16 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section ref="messageListRef" class="chat-panel">
-      <template v-for="message in messages" :key="message.id">
+    <section ref="messageListRef" class="chat-panel" @scroll="handleMessageListScroll">
+      <div v-if="hasHiddenHistory" class="history-loader">上滑加载更早的 10 条消息</div>
+      <template v-for="message in visibleMessages" :key="message.id">
         <div v-if="!message.hideTimestamp" class="time-divider">{{ formatTime(message.timestamp) }}</div>
         <article class="chat-row" :class="[`chat-row--${message.role}`, `chat-row--${message.messageKind}`]">
           <div v-if="message.messageKind === 'chat'" class="avatar" :class="[`avatar--${message.role}`, `avatar--${message.messageKind}`]">
             {{ message.role === 'user' ? '你' : 'AI' }}
           </div>
           <div class="chat-bubble" :class="[`chat-bubble--${message.role}`, `chat-bubble--${message.messageKind}`]">
-            <div class="chat-bubble__body">{{ message.content }}</div>
+            <div class="chat-bubble__body markdown-body" v-html="renderMarkdown(message.content)"></div>
           </div>
         </article>
       </template>
@@ -431,6 +483,16 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(18px);
 }
 
+.history-loader {
+  margin: 4px auto 14px;
+  width: fit-content;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 237, 213, 0.9);
+  color: #9a6b36;
+  font-size: 12px;
+}
+
 .time-divider {
   margin: 18px auto 10px;
   width: fit-content;
@@ -505,8 +567,77 @@ onBeforeUnmount(() => {
 }
 
 .chat-bubble__body {
-  white-space: pre-wrap;
   line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.markdown-body :deep(p) {
+  margin: 0 0 0.8em;
+}
+
+.markdown-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 0.65em 0;
+  padding-left: 1.4em;
+}
+
+.markdown-body :deep(li + li) {
+  margin-top: 0.24em;
+}
+
+.markdown-body :deep(pre) {
+  margin: 0.9em 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #e5eefb;
+}
+
+.markdown-body :deep(code) {
+  padding: 0.12em 0.38em;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.16);
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.92em;
+}
+
+.markdown-body :deep(pre code) {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.markdown-body :deep(blockquote) {
+  margin: 0.9em 0;
+  padding: 0.2em 0 0.2em 1em;
+  border-left: 3px solid rgba(217, 119, 6, 0.35);
+  color: #6b7280;
+}
+
+.markdown-body :deep(a) {
+  color: #c2410c;
+  text-decoration: underline;
+}
+
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4),
+.markdown-body :deep(h5),
+.markdown-body :deep(h6) {
+  margin: 0.9em 0 0.45em;
+  line-height: 1.35;
+}
+
+.markdown-body :deep(hr) {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.28);
 }
 
 .composer-bar {

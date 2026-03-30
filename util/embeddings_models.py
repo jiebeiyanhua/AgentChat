@@ -4,24 +4,20 @@ import logging
 
 import numpy as np
 import requests
-from dotenv import load_dotenv
 from huggingface_hub import snapshot_download
 
-load_dotenv()
+from util.config import get_bool, get_int, get_str
 
-MODEL = os.getenv("MODEL")
-DEVICE = os.getenv("DEVICE")
-NORMALIZE_EMBEDDINGS = os.getenv("NORMALIZE_EMBEDDINGS")
-EMBEDDING_PROVIDER = (os.getenv("EMBEDDING_PROVIDER") or "huggingface").strip().lower()
-OLLAMA_BASE_URL = (os.getenv("OLLAMA_BASE_URL") or "http://ollama:11434").rstrip("/")
-OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
-
-if not NORMALIZE_EMBEDDINGS:
-    raise ValueError("Please configure NORMALIZE_EMBEDDINGS in .env")
+MODEL = get_str("embedding.model")
+DEVICE = get_str("embedding.device")
+NORMALIZE_EMBEDDINGS = get_bool("embedding.normalize_embeddings", True)
+EMBEDDING_PROVIDER = (get_str("embedding.provider", "huggingface") or "huggingface").strip().lower()
+OLLAMA_BASE_URL = (get_str("ollama.base_url", "http://ollama:11434") or "http://ollama:11434").rstrip("/")
+OLLAMA_EMBED_MODEL = get_str("ollama.embed_model")
+OLLAMA_TIMEOUT = get_int("ollama.timeout", 120)
 
 if EMBEDDING_PROVIDER == "huggingface" and (not MODEL or not DEVICE):
-    raise ValueError("Please configure MODEL, DEVICE, and NORMALIZE_EMBEDDINGS in .env")
+    raise ValueError("Please configure embedding.model, embedding.device, and embedding.normalize_embeddings.")
 
 _embeddings = None
 _lock = threading.Lock()
@@ -30,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 def _should_normalize() -> bool:
-    return NORMALIZE_EMBEDDINGS.lower() == "true"
+    return NORMALIZE_EMBEDDINGS
 
 
 def _normalize_vector(vector: list[float]) -> list[float]:

@@ -19,18 +19,18 @@ PyAi 是一个包含 FastAPI 后端、Vue 前端、PostgreSQL、Redis 和 Ollama
 
 ## 模型切换
 
-项目支持两套模型接入方式，并通过环境变量切换：
+项目支持两套模型接入方式，并通过 `config/app_config.json` 切换：
 
-- 大模型：`LLM_PROVIDER=openai` 或 `LLM_PROVIDER=ollama`
-- 向量模型：`EMBEDDING_PROVIDER=huggingface` 或 `EMBEDDING_PROVIDER=ollama`
+- 大模型：`llm.provider = openai` 或 `llm.provider = ollama`
+- 向量模型：`embedding.provider = huggingface` 或 `embedding.provider = ollama`
 
 默认保持原有方式：
-- 大模型继续使用 `API_KEY` / `API_URL` / `API_MODEL`
+- 大模型继续使用 `llm.api_key` / `llm.api_url` / `llm.api_model`
 - 向量模型继续使用本地 HuggingFace / SentenceTransformer
 
 如果切到 Ollama：
-- 大模型读取 `OLLAMA_CHAT_MODEL`
-- 向量模型读取 `OLLAMA_EMBED_MODEL`
+- 大模型读取 `ollama.chat_model`
+- 向量模型读取 `ollama.embed_model`
 - Docker 内部服务地址默认是 `http://ollama:11434`
 
 ## 项目结构
@@ -76,7 +76,8 @@ PyAi/
 │   ├── package.json   # 前端依赖
 │   └── vite.config.ts # Vite配置
 ├── .dockerignore      # Docker忽略文件
-├── .env.example       # 环境变量示例
+├── config/
+│   └── app_config.example.json  # JSON 配置示例
 ├── .gitignore         # Git忽略文件
 ├── Dockerfile.backend # 后端Dockerfile
 ├── Dockerfile.frontend # 前端Dockerfile
@@ -89,35 +90,105 @@ PyAi/
 
 ## Docker 启动
 
-### 1. 准备环境变量
+### 1. 准备 JSON 配置
 
-复制 `.env.example` 为 `.env`，按你的场景填写。
+复制 `config/app_config.example.json` 为 `config/app_config.json`，按你的场景填写。
 
 ### 2. 默认模式：保留原有连接
 
-```env
-LLM_PROVIDER=openai
-EMBEDDING_PROVIDER=huggingface
-API_KEY=your_api_key
-API_URL=your_api_url
-API_MODEL=your_api_model
-MODEL=Qwen/Qwen3-Embedding-0.6B
-DEVICE=cpu
-NORMALIZE_EMBEDDINGS=True
+```json
+{
+  "llm": {
+    "provider": "openai",
+    "api_key": "your_api_key",
+    "api_url": "your_api_url",
+    "api_model": "your_api_model"
+  },
+  "embedding": {
+    "provider": "huggingface",
+    "model": "Qwen/Qwen3-Embedding-0.6B",
+    "device": "cpu",
+    "normalize_embeddings": true
+  }
+}
 ```
 
 ### 3. Ollama 模式
 
-```env
-LLM_PROVIDER=ollama
-EMBEDDING_PROVIDER=ollama
-OLLAMA_CHAT_MODEL=qwen2.5:7b
-OLLAMA_EMBED_MODEL=nomic-embed-text
+```json
+{
+  "llm": {
+    "provider": "ollama"
+  },
+  "embedding": {
+    "provider": "ollama"
+  },
+  "ollama": {
+    "chat_model": "qwen2.5:7b",
+    "embed_model": "nomic-embed-text"
+  }
+}
 ```
 
 你也可以混合使用：
-- `LLM_PROVIDER=openai` + `EMBEDDING_PROVIDER=ollama`
-- `LLM_PROVIDER=ollama` + `EMBEDDING_PROVIDER=huggingface`
+- `llm.provider=openai` + `embedding.provider=ollama`
+- `llm.provider=ollama` + `embedding.provider=huggingface`
+
+## MCP 扩展接入
+
+项目现在支持在启动阶段自动初始化多个 MCP Server，并将其工具自动注册给 Agent。
+
+可用配置方式：
+
+- 默认使用 `config/app_config.json`
+- 也可以通过 `APP_CONFIG_FILE` 指向其他 JSON 文件
+
+支持的 transport：
+
+- `stdio`
+- `sse`
+- `streamable_http`
+
+示例：
+
+```json
+{
+  "mcp": {
+    "fail_fast": false,
+    "servers": [
+      {
+        "name": "dingtalk",
+        "transport": "streamable_http",
+        "url": "https://your-dingtalk-mcp.example.com/mcp",
+        "headers": {
+          "Authorization": "Bearer your-token"
+        }
+      },
+      {
+        "name": "feishu",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "your-feishu-mcp-server"]
+      }
+    ]
+  }
+}
+```
+
+启动后可通过接口查看连接状态：
+
+```bash
+GET /mcp/servers
+```
+
+使用说明：
+
+- `mcp.fail_fast` 为 `true` 时，只要有一个 MCP 初始化失败，应用启动就会报错。
+- `servers` 中每个扩展都需要唯一的 `name` 和合法的 `transport`。
+- `stdio` 模式需要配置 `command`，通常还会配合 `args` 与 `env`。
+- `sse` / `streamable_http` 模式需要配置 `url`，如有鉴权可补充 `headers`。
+- 可通过 `enabled: false` 临时禁用某个扩展而不删除配置。
+- 配置生效后，可在前端 MCP 页面或 `GET /mcp/servers` 中查看连接状态和工具列表。
 
 ### 4. 启动服务
 
@@ -167,9 +238,9 @@ docker compose down -v
    npm install
    ```
 
-4. 配置环境变量：
-   - 复制 `.env.example` 文件为 `.env`
-   - 编辑 `.env` 文件，填写相关信息
+4. 配置 JSON 文件：
+   - 复制 `config/app_config.example.json` 为 `config/app_config.json`
+   - 编辑 `config/app_config.json`，填写相关信息
 
 5. 启动 PostgreSQL 和 Redis 服务
 
@@ -318,7 +389,6 @@ socket.onmessage = (event) => {
 - langchain-text-splitters - 文本分割工具
 - langchain-huggingface - HuggingFace模型集成
 - langchain-community - LangChain社区组件
-- python-dotenv - 环境变量管理
 - requests - 网络请求
 - tavily - 搜索工具
 - uvicorn - ASGI服务器

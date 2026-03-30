@@ -1,4 +1,5 @@
 /.env
+/config/app_config.json
 /models/
 /definition/SOUL.md
 /definition/USER.md

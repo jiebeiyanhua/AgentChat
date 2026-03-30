@@ -207,7 +207,6 @@ async def stream_agent_events(input_text: str, session_id: str):
                     loop.call_soon_threadsafe(queue.put_nowait, {"type": "chunk", "content": output})
                 elif "actions" in chunk:
                     logger.info("Tool action triggered: %s", chunk["actions"])
-                    loop.call_soon_threadsafe(queue.put_nowait, {"type": "action", "content": str(chunk["actions"])})
                     logger.info(f"[Tool action] {chunk['actions']}")
                     actions = chunk["actions"]
                     if not isinstance(actions, list):

@@ -4,14 +4,18 @@ import { computed, ref } from 'vue'
 import ChatView from './views/ChatView.vue'
 import ConfigView from './views/ConfigView.vue'
 import KnowledgeView from './views/KnowledgeView.vue'
+import McpView from './views/McpView.vue'
+import SkillsView from './views/SkillsView.vue'
 
-type ViewMode = 'chat' | 'config' | 'knowledge'
+type ViewMode = 'chat' | 'config' | 'knowledge' | 'mcp' | 'skills'
 
 const activeView = ref<ViewMode>('chat')
 
 const currentView = computed(() => {
   if (activeView.value === 'config') return ConfigView
   if (activeView.value === 'knowledge') return KnowledgeView
+  if (activeView.value === 'mcp') return McpView
+  if (activeView.value === 'skills') return SkillsView
   return ChatView
 })
 </script>
@@ -38,6 +42,12 @@ const currentView = computed(() => {
           </button>
           <button class="nav-item" :class="{ 'nav-item--active': activeView === 'knowledge' }" type="button" @click="activeView = 'knowledge'">
             <span>知识库</span>
+          </button>
+          <button class="nav-item" :class="{ 'nav-item--active': activeView === 'mcp' }" type="button" @click="activeView = 'mcp'">
+            <span>MCP 扩展</span>
+          </button>
+          <button class="nav-item" :class="{ 'nav-item--active': activeView === 'skills' }" type="button" @click="activeView = 'skills'">
+            <span>Skills 技能</span>
           </button>
         </section>
       </div>

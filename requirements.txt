@@ -1,4 +1,3 @@
-python-dotenv
 langchain-openai
 langchain-core
 langchain-classic
@@ -18,4 +17,6 @@ redis
 sentence-transformers
 torch
 huggingface-hub
+mcp
+tzdata
 --index-url https://mirrors.aliyun.com/pypi/simple

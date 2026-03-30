@@ -1,9 +1,10 @@
-import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from langchain_core.tools import tool
-APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Shanghai")
+from util.config import get_str
+
+APP_TIMEZONE = get_str("time.app_timezone", "Asia/Shanghai")
 
 def _get_app_timezone() -> ZoneInfo:
     return ZoneInfo(APP_TIMEZONE)

@@ -1,8 +1,6 @@
-import os
 import logging
 
 import requests
-from dotenv import load_dotenv
 from langchain_classic.agents import AgentExecutor, create_openai_tools_agent
 from langchain_core.prompts import (
     ChatPromptTemplate,
@@ -14,21 +12,22 @@ from langchain_openai import ChatOpenAI
 
 from tools.tool_list import tools_list
 from util.DbChatMessageHistory import DbChatMessageHistory
+from util.config import get_float, get_int, get_str
 from util.session_context import reset_current_session_id, set_current_session_id
+from util.skill_manager import render_relevant_skills_prompt, render_skill_catalog_prompt
 from util.time_trial import times
 
-load_dotenv()
-API_KEY = os.getenv("API_KEY")
-API_URL = os.getenv("API_URL")
-API_MODEL = os.getenv("API_MODEL")
-API_TIMEOUT = int(os.getenv("API_TIMEOUT", 60))
-API_TEMPERATURE = float(os.getenv("API_TEMPERATURE", 0.7))
+API_KEY = get_str("llm.api_key")
+API_URL = get_str("llm.api_url")
+API_MODEL = get_str("llm.api_model")
+API_TIMEOUT = get_int("llm.api_timeout", 60)
+API_TEMPERATURE = get_float("llm.api_temperature", 0.7)
 logger = logging.getLogger(__name__)
-LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or "openai").strip().lower()
-OLLAMA_BASE_URL = (os.getenv("OLLAMA_BASE_URL") or "http://ollama:11434").rstrip("/")
-OLLAMA_CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL")
-OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+LLM_PROVIDER = (get_str("llm.provider", "openai") or "openai").strip().lower()
+OLLAMA_BASE_URL = (get_str("ollama.base_url", "http://ollama:11434") or "http://ollama:11434").rstrip("/")
+OLLAMA_CHAT_MODEL = get_str("ollama.chat_model")
+OLLAMA_API_KEY = get_str("ollama.api_key", "ollama")
+OLLAMA_TIMEOUT = get_int("ollama.timeout", 120)
 
 
 def get_message_history(session_id: str) -> DbChatMessageHistory:
@@ -94,10 +93,17 @@ class AgentLLM:
 
         with open("definition/IDENTITY.md", "r", encoding="utf-8") as file:
             identity_prompt = file.read()
+        skills_catalog_prompt = render_skill_catalog_prompt()
+        selected_skills_prompt = render_relevant_skills_prompt(input_text)
+        system_prompt = identity_prompt + "\n" + tool_registry.getAvailableTools()
+        if skills_catalog_prompt:
+            system_prompt += "\n\n" + skills_catalog_prompt
+        if selected_skills_prompt:
+            system_prompt += "\n\n" + selected_skills_prompt
 
         prompt = ChatPromptTemplate.from_messages(
             [
-                SystemMessagePromptTemplate.from_template(identity_prompt + "\n" + tool_registry.getAvailableTools()),
+                SystemMessagePromptTemplate.from_template(system_prompt),
                 MessagesPlaceholder("chat_history"),
                 HumanMessagePromptTemplate.from_template("{input}"),
                 MessagesPlaceholder("agent_scratchpad"),
@@ -110,7 +116,7 @@ class AgentLLM:
             tools=tool_registry.getToolsList(),
             verbose=True,
             handle_parsing_errors=True,
-            max_iterations=5,
+            max_iterations=20,
             return_intermediate_steps=True,
         )
 

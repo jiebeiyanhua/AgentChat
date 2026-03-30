@@ -1,9 +1,10 @@
-import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from util.config import get_str
+
 DISPLAY_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
-APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Shanghai")
+APP_TIMEZONE = get_str("time.app_timezone", "Asia/Shanghai")
 
 
 def _get_app_timezone() -> ZoneInfo:

@@ -1,13 +1,12 @@
 import json
-import os
 
 import requests
-from dotenv import load_dotenv
 from langchain_core.tools import tool
 from tavily import TavilyClient
 
-load_dotenv()
-tavily_api_key = os.getenv("TAVILY_API_KEY")
+from util.config import get_str
+
+tavily_api_key = get_str("search.tavily_api_key")
 
 @tool
 def web_search(query: str) -> str:

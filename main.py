@@ -11,7 +11,9 @@ from controller.config_controller import router as config_router
 from util.db_models import init_db
 from util.embeddings_models import init_embeddings
 from util.knowledge_base import ensure_default_definition_sources, ensure_knowledge_definitions
+from util.mcp_manager import mcp_manager
 from util.redis_client import get_redis_client
+from util.skill_manager import ensure_skills_dir
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,8 +30,12 @@ async def lifespan(_: FastAPI):
     get_redis_client().ping()
     ensure_knowledge_definitions()
     ensure_default_definition_sources()
+    ensure_skills_dir()
+    mcp_manager.start()
     logger.info("Application resources ready.")
     yield
+    logger.info("Shutting down application resources.")
+    mcp_manager.stop()
 
 
 app = FastAPI(lifespan=lifespan)
