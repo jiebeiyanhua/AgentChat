@@ -106,6 +106,17 @@ def _find_knowledge_definition(source_key: str | None) -> dict | None:
     return None
 
 
+def _extract_final_ai_message(chunk) -> AIMessage | None:
+    messages = chunk.get("messages")
+    if not isinstance(messages, list):
+        return None
+
+    for message in reversed(messages):
+        if isinstance(message, AIMessage):
+            return message
+    return None
+
+
 def build_action_preface_message(action) -> dict | None:
     preface = _extract_action_preface(action)
     if not preface:
@@ -196,11 +207,18 @@ async def stream_agent_events(input_text: str, session_id: str):
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict] = asyncio.Queue()
     full_response = ""
+    final_ai_message: AIMessage | None = None
 
     def run_think():
+        nonlocal final_ai_message
         try:
             logger.info("Calling LLM for session_id=%s.", session_id)
             for chunk in llm_client.think(input_text, session_id):
+
+                chunk_ai_message = _extract_final_ai_message(chunk)
+                if chunk_ai_message is not None:
+                    final_ai_message = chunk_ai_message
+
                 if "output" in chunk:
                     output = chunk["output"]
                     logger.debug("Streaming chunk received, length=%d.", len(output))
@@ -273,7 +291,9 @@ async def stream_agent_events(input_text: str, session_id: str):
                 break
 
             if event_type == "done":
-                if full_response:
+                if final_ai_message is not None:
+                    history.add_message(final_ai_message)
+                elif full_response:
                     history.add_message(AIMessage(content=full_response))
                 yield event
                 break
@@ -331,6 +351,7 @@ async def websocket_talk(websocket: WebSocket):
                 continue
 
             refresh_session_heartbeat(session_id)
+            DbChatMessageHistory(session_id=session_id).add_message(HumanMessage(content=input_text))
             async for event in stream_agent_events(input_text, session_id):
                 if event["type"] == "chunk":
                     await websocket.send_json({"type": "chunk", "content": event["content"]})

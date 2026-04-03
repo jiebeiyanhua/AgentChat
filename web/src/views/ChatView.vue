@@ -158,7 +158,7 @@ function pushActionMessage(content: string, messageKind: MessageKind = 'tool', h
   scrollToBottom()
 }
 
-function pushAssistantNote(content: string, hideTimestamp = false) {
+function pushAssistantNote(content: string, hideTimestamp = false, messageKind: MessageKind = 'chat') {
   const displayContent = content.trim()
   if (!displayContent) return
 
@@ -167,7 +167,7 @@ function pushAssistantNote(content: string, hideTimestamp = false) {
     role: 'assistant',
     content: displayContent,
     timestamp: nowText(),
-    messageKind: 'chat',
+    messageKind,
     hideTimestamp,
     pending: false,
   })
@@ -234,7 +234,7 @@ function handleSocketMessage(payload: any) {
   }
 
   if (payload.type === 'assistant_note') {
-    pushAssistantNote(payload.content ?? '', payload.hide_timestamp ?? false)
+    pushAssistantNote(payload.content ?? '', payload.hide_timestamp ?? false, payload.message_kind ?? 'chat')
     return
   }
 

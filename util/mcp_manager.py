@@ -225,6 +225,7 @@ class MCPManager:
         self._thread: threading.Thread | None = None
         self._servers: dict[str, _ManagedMCPServer] = {}
         self._tool_cache: list[Any] = []
+        self._tool_metadata_cache: list[dict[str, Any]] = []
         self._started = False
         self._lock = threading.RLock()
         self.fail_fast = get_bool("mcp.fail_fast", default=False)
@@ -251,6 +252,7 @@ class MCPManager:
                 self._thread.join(timeout=5)
                 self._servers.clear()
                 self._tool_cache = []
+                self._tool_metadata_cache = []
                 self._loop = None
                 self._thread = None
                 raise
@@ -268,6 +270,7 @@ class MCPManager:
 
             self._servers.clear()
             self._tool_cache = []
+            self._tool_metadata_cache = []
             self._loop = None
             self._thread = None
             self._started = False
@@ -280,6 +283,9 @@ class MCPManager:
 
     def get_langchain_tools(self) -> list[Any]:
         return list(self._tool_cache)
+
+    def get_tool_metadata(self) -> list[dict[str, Any]]:
+        return list(self._tool_metadata_cache)
 
     def get_server_statuses(self) -> list[dict[str, Any]]:
         result = []
@@ -311,6 +317,7 @@ class MCPManager:
     async def _connect_servers(self, configs: list[MCPServerConfig]):
         self._servers = {}
         self._tool_cache = []
+        self._tool_metadata_cache = []
 
         for config in configs:
             server = _ManagedMCPServer(config)
@@ -331,7 +338,7 @@ class MCPManager:
                     raise
                 continue
 
-        self._tool_cache = self._build_langchain_tools()
+        self._tool_cache, self._tool_metadata_cache = self._build_langchain_tools()
 
     async def _close_servers(self):
         for server in self._servers.values():
@@ -340,8 +347,9 @@ class MCPManager:
             except Exception:
                 logger.exception("Failed to close MCP server '%s'.", server.config.name)
 
-    def _build_langchain_tools(self) -> list[Any]:
+    def _build_langchain_tools(self) -> tuple[list[Any], list[dict[str, Any]]]:
         tool_list = []
+        tool_metadata = []
         for server_name, server in self._servers.items():
             if server.status != "connected":
                 continue
@@ -376,8 +384,17 @@ class MCPManager:
                         args_schema=args_model,
                     )
                 )
+                tool_metadata.append(
+                    {
+                        "server_name": server_name,
+                        "tool_name": tool.name,
+                        "langchain_name": langchain_name,
+                        "description": (getattr(tool, "description", None) or "").strip(),
+                        "transport": server.config.transport,
+                    }
+                )
 
-        return tool_list
+        return tool_list, tool_metadata
 
     def _run_loop(self):
         assert self._loop is not None

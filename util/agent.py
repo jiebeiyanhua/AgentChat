@@ -13,8 +13,9 @@ from langchain_openai import ChatOpenAI
 from tools.tool_list import tools_list
 from util.DbChatMessageHistory import DbChatMessageHistory
 from util.config import get_float, get_int, get_str
+from util.mcp_manager import mcp_manager
 from util.session_context import reset_current_session_id, set_current_session_id
-from util.skill_manager import render_relevant_skills_prompt, render_skill_catalog_prompt
+from util.skill_manager import list_installed_skills
 from util.time_trial import times
 
 API_KEY = get_str("llm.api_key")
@@ -41,6 +42,36 @@ def ensure_ollama_model(model_name: str):
         timeout=OLLAMA_TIMEOUT,
     )
     response.raise_for_status()
+
+
+def build_mcp_catalog_prompt() -> str:
+    servers = mcp_manager.get_server_statuses()
+    if not servers:
+        return "当前没有可用的 MCP 服务。"
+
+    lines = [
+        "以下是当前可用的 MCP 服务目录。",
+        "注意：这里不直接提供 MCP 工具明细。",
+        "如果你判断需要使用某个 MCP 服务，必须先调用 `get_mcp_tools_by_server` 查询该服务下的工具列表，再决定具体调用哪个 MCP 工具。",
+    ]
+    for item in servers:
+        lines.append(f"- name={item['name']} | transport={item['transport']} | status={item['status']}")
+    return "\n".join(lines)
+
+
+def build_skill_catalog_prompt() -> str:
+    skills = list_installed_skills()
+    if not skills:
+        return "当前没有可用的 Skills。"
+
+    lines = [
+        "以下是当前可用的 Skills 目录。",
+        "注意：这里不直接提供 Skill 的描述或完整说明。",
+        "如果你判断某个 Skill 可能有帮助，必须先调用 `get_skill_detail` 查询该 Skill 的描述与完整说明，再决定是否使用。",
+    ]
+    for item in skills:
+        lines.append(f"- name={item.name}")
+    return "\n".join(lines)
 
 
 class AgentLLM:
@@ -72,12 +103,15 @@ class AgentLLM:
         if not all([api_key, api_url, api_model]):
             raise ValueError("Model id, API key, and API url must be configured.")
 
+        llm_kwargs = {
+            "api_key": api_key,
+            "base_url": api_url,
+            "model": api_model,
+            "timeout": timeout,
+            "temperature": API_TEMPERATURE,
+        }
         self.llm = ChatOpenAI(
-            api_key=api_key,
-            base_url=api_url,
-            model=api_model,
-            timeout=timeout,
-            temperature=API_TEMPERATURE,
+            **llm_kwargs,
         )
         logger.info("LLM initialized.")
 
@@ -93,22 +127,42 @@ class AgentLLM:
 
         with open("definition/IDENTITY.md", "r", encoding="utf-8") as file:
             identity_prompt = file.read()
-        skills_catalog_prompt = render_skill_catalog_prompt()
-        selected_skills_prompt = render_relevant_skills_prompt(input_text)
-        system_prompt = identity_prompt + "\n" + tool_registry.getAvailableTools()
-        if skills_catalog_prompt:
-            system_prompt += "\n\n" + skills_catalog_prompt
-        if selected_skills_prompt:
-            system_prompt += "\n\n" + selected_skills_prompt
+        tools_prompt = tool_registry.getAvailableTools(category="tool")
+        mcp_catalog_prompt = build_mcp_catalog_prompt()
+        skills_catalog_prompt = build_skill_catalog_prompt()
 
-        prompt = ChatPromptTemplate.from_messages(
+        prompt_messages = [SystemMessagePromptTemplate.from_template(identity_prompt)]
+        if tools_prompt:
+            prompt_messages.append(
+                SystemMessagePromptTemplate.from_template(
+                    "## 工具列表\n"
+                    "以下是当前会话可直接使用的普通工具列表。\n\n"
+                    f"{tools_prompt}"
+                )
+            )
+        if mcp_catalog_prompt:
+            prompt_messages.append(
+                SystemMessagePromptTemplate.from_template(
+                    "## MCP列表\n"
+                    f"{mcp_catalog_prompt}"
+                )
+            )
+        if skills_catalog_prompt:
+            prompt_messages.append(
+                SystemMessagePromptTemplate.from_template(
+                    "## Skills列表\n"
+                    f"{skills_catalog_prompt}"
+                )
+            )
+        prompt_messages.extend(
             [
-                SystemMessagePromptTemplate.from_template(system_prompt),
                 MessagesPlaceholder("chat_history"),
                 HumanMessagePromptTemplate.from_template("{input}"),
                 MessagesPlaceholder("agent_scratchpad"),
             ]
         )
+
+        prompt = ChatPromptTemplate.from_messages(prompt_messages)
 
         agent = create_openai_tools_agent(self.llm, tool_registry.getToolsList(), prompt)
         agent_executor = AgentExecutor(
